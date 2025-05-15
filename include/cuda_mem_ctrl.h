@@ -3,15 +3,51 @@
 
 // CUDA copy kind
 #include <cuda.h>
+#include <npp.h>
 
 #include <stdint.h>
+#include <stdio.h>
 
+#include <functional>
 #include <memory>
+
+namespace npp_stream_ctx
+{
+NppStreamContext create_npp_stream_ctx()
+{
+    cudaStream_t stream;
+    cudaStreamCreate(&stream);
+
+    cudaDeviceProp properties;
+    cudaGetDeviceProperties_v2(&properties, 0);
+
+    int major = 0;
+    int minor = 0;
+    cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, 0);
+    cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, 0);
+
+    uint32_t flags = 0;
+    cudaStreamGetFlags(stream, &flags);
+
+    // Set up NPP Stream Context
+    NppStreamContext context = {.hStream = 0,
+                                .nCudaDeviceId = cudaGetDevice(0),
+                                .nMultiProcessorCount = properties.multiProcessorCount,
+                                .nMaxThreadsPerMultiProcessor = properties.maxThreadsPerMultiProcessor,
+                                .nMaxThreadsPerBlock = properties.maxThreadsPerBlock,
+                                .nSharedMemPerBlock = properties.sharedMemPerBlock,
+                                .nCudaDevAttrComputeCapabilityMajor = major,
+                                .nCudaDevAttrComputeCapabilityMinor = minor,
+                                .nStreamFlags = flags};
+
+    return context;
+}
+} // namespace npp_stream_ctx
 
 class cuda_mem_ctrl
 {
   public:
-    template <typename T> static std::unique_ptr<T> cuda_host_malloc(uint64_t num_of_bytes)
+    template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_host_malloc(uint64_t num_of_bytes)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
         int obj_bytes = sizeof(T) * num_of_bytes;
@@ -22,11 +58,11 @@ class cuda_mem_ctrl
             return std::unique_ptr<T>(nullptr);
         }
 
-        std::unique_ptr uPtr(ptr, cuda_mem_ctrl::__cuda_free_host<T>);
+        std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_host<T>);
 
         return uPtr;
     }
-    template <typename T> static std::unique_ptr<T> cuda_dev_malloc(uint64_t num_of_bytes)
+    template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_dev_malloc(uint64_t num_of_bytes)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
         int obj_bytes = sizeof(T) * num_of_bytes;
@@ -37,13 +73,15 @@ class cuda_mem_ctrl
             return std::unique_ptr<T>(nullptr);
         }
 
-        std::unique_ptr uPtr(ptr, cuda_mem_ctrl::__cuda_free_dev<T>);
+        std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_dev<T>);
 
         return uPtr;
     }
     template <typename T> static int cuda_cpy(T *src, T *dst, uint64_t size, cudaMemcpyKind mv_type)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
+        int attr = 0;
+
         switch (mv_type)
         {
         case cudaMemcpyHostToHost:
@@ -77,7 +115,6 @@ class cuda_mem_ctrl
             return cudaMemcpy(dst, src, size, mv_type);
             break;
         case cudaMemcpyDefault:
-            int attr = 0;
             cuDeviceGetAttribute(&attr, CU_DEVICE_ATTRIBUTE_UNIFIED_ADDRESSING, 0);
 
             if (attr == 0)
@@ -92,8 +129,6 @@ class cuda_mem_ctrl
             return cudaErrorInvalidMemcpyDirection;
         }
     }
-
-  private:
     template <typename T> static void __cuda_free_host(T *pointer)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);

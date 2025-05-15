@@ -4,7 +4,8 @@ int nppiRGB24ToCbYCr422(const uint8_t *__restrict__ device_src,
                         uint8_t *__restrict__ device_dst,
                         int width,
                         int height,
-                        const NppiRect &ROI_Size_Loc = {0, 0, 0, 0})
+                        NppStreamContext context,
+                        const NppiRect &ROI_Size_Loc)
 {
     // Validate input parameters
     if (!device_src || !device_dst || width <= 0 || height <= 0 || (ROI_Size_Loc.x + ROI_Size_Loc.width) > width ||
@@ -30,7 +31,7 @@ int nppiRGB24ToCbYCr422(const uint8_t *__restrict__ device_src,
     }
 
     // Perform RGB to YCbCr422 conversion on GPU
-    nppiRGBToCbYCr422_8u_C3C2R(device_src + srcOffset, srcStep, device_dst + dstOffset, dstStep, roiSize);
+    nppiRGBToCbYCr422_8u_C3C2R_Ctx(device_src + srcOffset, srcStep, device_dst + dstOffset, dstStep, roiSize, context);
     return 0; // Success
 }
 
@@ -38,7 +39,8 @@ int nppiCbYCr422ToBGR24(const uint8_t *__restrict__ device_src,
                         uint8_t *__restrict__ device_dst,
                         int width,
                         int height,
-                        const NppiRect &ROI_Size_Loc = {0, 0, 0, 0})
+                        NppStreamContext context,
+                        const NppiRect &ROI_Size_Loc)
 {
     // Validate input parameters
     if (!device_src || !device_dst || width <= 0 || height <= 0 || (ROI_Size_Loc.x + ROI_Size_Loc.width) > width ||
@@ -75,10 +77,15 @@ int nppiCbYCr422ToBGR24(const uint8_t *__restrict__ device_src,
     if (fillROI.width != 0 && fillROI.height != 0)
     {
         const Npp8u border_color[3] = {0, 0, 255};
-        nppiSet_8u_C3R(border_color, device_dst + fillOffset, dstStep, fillROI);
+        nppiSet_8u_C3R_Ctx(border_color, device_dst + fillOffset, dstStep, fillROI, context);
     }
 
     // Perform YCbCr422 to BGR conversion on GPU
-    nppiCbYCr422ToBGR_709HDTV_8u_C2C3R(device_src + srcOffset, srcStep, device_dst + dstOffset, dstStep, roiSize);
+    nppiCbYCr422ToBGR_709HDTV_8u_C2C3R_Ctx(device_src + srcOffset,
+                                           srcStep,
+                                           device_dst + dstOffset,
+                                           dstStep,
+                                           roiSize,
+                                           context);
     return 0; // Success
 }
