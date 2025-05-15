@@ -20,7 +20,6 @@ int main()
 
     // Load the image
     cv::Mat image =
-        cv::imread("ipp_v_npp/images_1920x1080/image_23.jpg", cv::IMREAD_COLOR);
 
     int width = image.cols;
     int height = image.rows;

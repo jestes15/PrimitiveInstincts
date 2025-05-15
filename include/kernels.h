@@ -1,5 +1,5 @@
-#ifndef FD0C52F4_8FD3_4586_A7A9_E2963FBEA290
-#define FD0C52F4_8FD3_4586_A7A9_E2963FBEA290
+#ifndef __KERNELS_H__
+#define __KERNELS_H__
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -28,4 +28,4 @@ void convert_CbYCr_To_BGR24(const uint8_t *__restrict__ src,
                             const uint32_t height,
                             const uint32_t width);
 
-#endif /* FD0C52F4_8FD3_4586_A7A9_E2963FBEA290 */
+#endif // __KERNELS_H__
