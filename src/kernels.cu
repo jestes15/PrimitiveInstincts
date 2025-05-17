@@ -58,6 +58,7 @@ __global__ void cbycr422_to_bgr24(
                  // Convert the data in t1 from  uint8_t to int32_t
                  "cvt.s32.u8 t5, t4;\n"
                  // Add -16 to the luma value stored in register t5
+                 // TODO: Make FMA
                  "add.s32 t6, t5, -16;\n"
                  // Multiply the luma value by 298 and store it in y1
                  "mul.lo.s32 %3, t6, 298;\n"
