@@ -58,6 +58,7 @@ __global__ void cbycr422_to_bgr24(
                  // Convert the data in t1 from  uint8_t to int32_t
                  "cvt.s32.u8 t5, t4;\n"
                  // Add -16 to the luma value stored in register t5
+                 // TODO: Make FMA
                  "add.s32 t6, t5, -16;\n"
                  // Multiply the luma value by 298 and store it in y1
                  "mul.lo.s32 %3, t6, 298;\n"
@@ -103,6 +104,12 @@ __global__ void cbycr422_to_bgr24_f32_clamped(uint8_t *__restrict__ src,
 
     if (x >= width || y >= height)
         return;
+
+    // Calculate the reciprocal of 255, 1/255 with the intrinsic function __frcp
+    // More information found here:
+    // __frcp:
+    // https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__SINGLE.html?highlight=__frcp#_CPPv49__frcp_rzf
+    float recip = 0.003922;
 
     int64_t src_idx = y * src_pitch + 2 * x;
     int64_t dst_idx = y * dst_pitch + x;

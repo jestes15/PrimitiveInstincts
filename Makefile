@@ -10,8 +10,8 @@ OPENCV_INCLUDE_DIR = /usr/include/opencv4
 CUDA_LD_FLAGS = -lcuda -lcupti -lnppc -lnppial -lnppicc -lnppidei -lnppif -lnppig -lnppim
 OPENCV_LD_FLAGS = -lopencv_highgui -lopencv_imgcodecs -lopencv_imgproc -lopencv_core 
 
-CXX_FLAGS = -Wno-deprecated-gpu-targets -g -G -O2 -std=c++17 --generate-line-info -arch=sm_89 -Xcudafe "--diag_suppress=611" -I $(INC_DIR) -I $(OPENCV_INCLUDE_DIR)
-LD_FLAGS = $(CUDA_LD_FLAGS) $(OPENCV_LD_FLAGS) -Wno-deprecated-gpu-targets
+CXX_FLAGS = -Wno-deprecated-gpu-targets -g -O2 -std=c++17 --generate-line-info -arch=sm_89 -Xcudafe "--diag_suppress=611" -I $(INC_DIR) -I $(OPENCV_INCLUDE_DIR)
+LD_FLAGS = -Wno-deprecated-gpu-targets $(CUDA_LD_FLAGS) $(OPENCV_LD_FLAGS)
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cu)
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(SRC_FILES))
