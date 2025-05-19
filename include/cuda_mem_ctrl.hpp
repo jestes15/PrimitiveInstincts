@@ -47,7 +47,37 @@ NppStreamContext create_npp_stream_ctx()
 class cuda_mem_ctrl
 {
   public:
-    template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_host_malloc(uint64_t num_of_bytes)
+    // template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_host_malloc(uint64_t num_of_bytes)
+    // {
+    //     printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
+    //     int obj_bytes = sizeof(T) * num_of_bytes;
+    //     T *ptr = nullptr;
+    //     if (cudaMallocHost(reinterpret_cast<void **>(&ptr), obj_bytes) != cudaSuccess)
+    //     {
+    //         printf("LOG: ERROR in %s\n", __PRETTY_FUNCTION__);
+    //         return std::unique_ptr<T>(nullptr);
+    //     }
+
+    //     std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_host<T>);
+
+    //     return uPtr;
+    // }
+    // template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_dev_malloc(uint64_t num_of_bytes)
+    // {
+    //     printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
+    //     int obj_bytes = sizeof(T) * num_of_bytes;
+    //     T *ptr = nullptr;
+    //     if (cudaMalloc(reinterpret_cast<void **>(&ptr), obj_bytes) != cudaSuccess)
+    //     {
+    //         printf("LOG: ERROR in %s\n", __PRETTY_FUNCTION__);
+    //         return std::unique_ptr<T>(nullptr);
+    //     }
+
+    //     std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_dev<T>);
+
+    //     return uPtr;
+    // }
+    template <typename T> static std::shared_ptr<T> cuda_host_malloc(uint64_t num_of_bytes)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
         int obj_bytes = sizeof(T) * num_of_bytes;
@@ -55,14 +85,12 @@ class cuda_mem_ctrl
         if (cudaMallocHost(reinterpret_cast<void **>(&ptr), obj_bytes) != cudaSuccess)
         {
             printf("LOG: ERROR in %s\n", __PRETTY_FUNCTION__);
-            return std::unique_ptr<T>(nullptr);
+            return std::shared_ptr<T>(nullptr);
         }
 
-        std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_host<T>);
-
-        return uPtr;
+        return std::shared_ptr<T>(ptr, cuda_mem_ctrl::__cuda_free_host<T>);
     }
-    template <typename T> static std::unique_ptr<T, std::function<void(T *)>> cuda_dev_malloc(uint64_t num_of_bytes)
+    template <typename T> static std::shared_ptr<T> cuda_dev_malloc(uint64_t num_of_bytes)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
         int obj_bytes = sizeof(T) * num_of_bytes;
@@ -70,17 +98,22 @@ class cuda_mem_ctrl
         if (cudaMalloc(reinterpret_cast<void **>(&ptr), obj_bytes) != cudaSuccess)
         {
             printf("LOG: ERROR in %s\n", __PRETTY_FUNCTION__);
-            return std::unique_ptr<T>(nullptr);
+            return std::shared_ptr<T>(nullptr);
         }
 
-        std::unique_ptr<T, std::function<void(T *)>> uPtr(ptr, cuda_mem_ctrl::__cuda_free_dev<T>);
-
-        return uPtr;
+        return std::shared_ptr<T>(ptr, cuda_mem_ctrl::__cuda_free_dev<T>);
     }
-    template <typename T> static int cuda_cpy(T *src, T *dst, uint64_t size, cudaMemcpyKind mv_type)
+    template <typename T>
+    static int cuda_cpy(std::shared_ptr<T> shared_src,
+                        std::shared_ptr<T> shared_dst,
+                        uint64_t size,
+                        cudaMemcpyKind mv_type)
     {
         printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
         int attr = 0;
+
+        T *src = shared_src.get();
+        T *dst = shared_dst.get();
 
         switch (mv_type)
         {

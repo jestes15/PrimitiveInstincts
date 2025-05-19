@@ -106,9 +106,10 @@ __global__ void cbycr422_to_bgr24_f32_clamped(uint8_t *__restrict__ src,
 
     int64_t src_idx = y * src_pitch + 2 * x;
     int64_t dst_idx = y * dst_pitch + x;
-
     int32_t cb, y0, cr, y1;
     uint8_t *addr = src + src_idx;
+    float pair[2];
+    float recip = 0.003922;
 
     // PTX Assembly to speed up pulling data from global memory
     asm volatile(".reg .u8 t1;\n" // Declare temperary registers
@@ -156,13 +157,6 @@ __global__ void cbycr422_to_bgr24_f32_clamped(uint8_t *__restrict__ src,
     float g1_ = static_cast<float>((y1 - 100 * cb - 208 * cr + 128) >> 8);
     float b1_ = static_cast<float>((y1 + 516 * cb + 128) >> 8);
 
-    float pair[2];
-    // Calculate the reciprocal of 255, 1/255 with the intrinsic function __frcp
-    // More information found here:
-    // __frcp:
-    // https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__INTRINSIC__SINGLE.html?highlight=__frcp#_CPPv49__frcp_rzf
-    float recip = __frcp_rz(255.0f);
-
     // Scale the integer value down to the [0.0, 1.0] (inclusive) scale
     // Information on these intrrinsic functions can be found here:
     // __fmul_rz:
@@ -196,4 +190,72 @@ void convert_CbYCr_To_BGR24(uint8_t *__restrict__ src,
     dim3 grid((width + (2 * TILE_WIDTH - 1)) / (2 * TILE_WIDTH), (height + TILE_HEIGHT - 1) / TILE_HEIGHT);
 
     cbycr422_to_bgr24_f32_clamped<<<grid, block>>>(src, dst_r, dst_g, dst_b, width, height, src_pitch, dst_pitch);
+}
+
+void resize_BGR24_HD_to_1984x1984(std::shared_ptr<float> src_r,
+                                  std::shared_ptr<float> src_g,
+                                  std::shared_ptr<float> src_b,
+                                  std::shared_ptr<float> dst_r,
+                                  std::shared_ptr<float> dst_g,
+                                  std::shared_ptr<float> dst_b,
+                                  int src_width,
+                                  int src_height,
+                                  NppStreamContext context)
+{
+    const Npp32f *src[3] = {src_r.get(), src_g.get(), src_b.get()};
+    Npp32f *dst[3] = {dst_r.get(), dst_g.get(), dst_b.get()};
+    NppiRect src_roi = {.x = 0, .y = 0, .width = src_width, .height = src_height};
+    NppiRect dst_roi = {.x = 0, .y = 0, .width = 1984, .height = 1984};
+    NppiSize src_size = {.width = src_width, .height = src_height};
+    int32_t src_step = src_size.width * sizeof(float);
+    int32_t dst_step = dst_roi.width * sizeof(float);
+    double scale_factor = std::min(dst_roi.width / (src_width * 1.0), dst_roi.height / (src_height * 1.0));
+    int new_width = std::ceil(scale_factor * src_width);
+    int new_height = std::ceil(scale_factor * src_height);
+    float padding_width = (dst_roi.width - new_width) / 2;
+    float padding_height = (dst_roi.height - new_height) / 2;
+
+    nppiResizeSqrPixel_32f_P3R_Ctx(src,
+                                   src_size,
+                                   src_step,
+                                   src_roi,
+                                   dst,
+                                   dst_step,
+                                   dst_roi,
+                                   scale_factor,
+                                   scale_factor,
+                                   padding_width,
+                                   padding_height,
+                                   NPPI_INTER_LINEAR,
+                                   context);
+}
+
+__global__ void print_kernel_u8(uint8_t *src, uint32_t size)
+{
+    for (int i = 0; i < size; i++)
+        printf("src[%d] = %d\n", i, src[i]);
+}
+
+void print_gpu_memory_u8(std::shared_ptr<uint8_t> src, uint32_t size)
+{
+    printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
+    dim3 block(1, 1, 1);
+    dim3 grid(1, 1, 1);
+
+    print_kernel_u8<<<grid, block>>>(src.get(), size);
+}
+
+__global__ void print_kernel_f32(float *src, uint32_t size)
+{
+    for (int i = 0; i < size; i++)
+        printf("src[%d] = %f\n", i, src[i]);
+}
+
+void print_gpu_memory_f32(std::shared_ptr<float> src, uint32_t size)
+{
+    printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
+    dim3 block(1, 1, 1);
+    dim3 grid(1, 1, 1);
+
+    print_kernel_f32<<<grid, block>>>(src.get(), size);
 }
