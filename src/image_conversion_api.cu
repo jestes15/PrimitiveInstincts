@@ -81,11 +81,7 @@ int nppiCbYCr422ToBGR24(const uint8_t *__restrict__ device_src,
     }
 
     // Perform YCbCr422 to BGR conversion on GPU
-    nppiCbYCr422ToBGR_709HDTV_8u_C2C3R_Ctx(device_src + srcOffset,
-                                           srcStep,
-                                           device_dst + dstOffset,
-                                           dstStep,
-                                           roiSize,
+    nppiCbYCr422ToBGR_709HDTV_8u_C2C3R_Ctx(device_src + srcOffset, srcStep, device_dst + dstOffset, dstStep, roiSize,
                                            context);
     return 0; // Success
 }

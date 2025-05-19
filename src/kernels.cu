@@ -216,19 +216,8 @@ void resize_BGR24_HD_to_1984x1984(std::shared_ptr<float> src_r,
     float padding_width = (dst_roi.width - new_width) / 2;
     float padding_height = (dst_roi.height - new_height) / 2;
 
-    nppiResizeSqrPixel_32f_P3R_Ctx(src,
-                                   src_size,
-                                   src_step,
-                                   src_roi,
-                                   dst,
-                                   dst_step,
-                                   dst_roi,
-                                   scale_factor,
-                                   scale_factor,
-                                   padding_width,
-                                   padding_height,
-                                   NPPI_INTER_LINEAR,
-                                   context);
+    nppiResizeSqrPixel_32f_P3R_Ctx(src, src_size, src_step, src_roi, dst, dst_step, dst_roi, scale_factor, scale_factor,
+                                   padding_width, padding_height, NPPI_INTER_LINEAR, context);
 }
 
 __global__ void print_kernel_u8(uint8_t *src, uint32_t size)

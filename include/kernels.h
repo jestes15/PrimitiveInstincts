@@ -3,7 +3,6 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <generated_cuda_runtime_api_meta.h>
 #include <mma.h>
 #include <npp.h>
 

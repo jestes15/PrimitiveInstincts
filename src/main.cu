@@ -41,21 +41,11 @@ int main()
     auto context = npp_stream_ctx::create_npp_stream_ctx();
 
     nppiRGB24ToCbYCr422(device_rgb_source_image.get(), device_cbycr_image.get(), hd_width, hd_height, context);
-    convert_CbYCr_To_BGR24(device_cbycr_image.get(),
-                           device_rgb_f32_red_HD.get(),
-                           device_rgb_f32_grn_HD.get(),
-                           device_rgb_f32_blu_HD.get(),
-                           hd_height,
-                           hd_width);
-    resize_BGR24_HD_to_1984x1984(device_rgb_f32_red_HD,
-                                 device_rgb_f32_grn_HD,
-                                 device_rgb_f32_blu_HD,
-                                 device_rgb_f32_red_SQ,
-                                 device_rgb_f32_grn_SQ,
-                                 device_rgb_f32_blu_SQ,
-                                 hd_width,
-                                 hd_height,
-                                 context);
+    convert_CbYCr_To_BGR24(device_cbycr_image.get(), device_rgb_f32_red_HD.get(), device_rgb_f32_grn_HD.get(),
+                           device_rgb_f32_blu_HD.get(), hd_height, hd_width);
+    resize_BGR24_HD_to_1984x1984(device_rgb_f32_red_HD, device_rgb_f32_grn_HD, device_rgb_f32_blu_HD,
+                                 device_rgb_f32_red_SQ, device_rgb_f32_grn_SQ, device_rgb_f32_blu_SQ, hd_width,
+                                 hd_height, context);
 
     cuda_mem_ctrl::cuda_cpy(device_rgb_f32_red_HD, host_rgb_f32_red_HD, f_dst_size, cudaMemcpyDeviceToHost);
     cuda_mem_ctrl::cuda_cpy(device_rgb_f32_blu_HD, host_rgb_f32_blu_HD, f_dst_size, cudaMemcpyDeviceToHost);
