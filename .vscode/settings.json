@@ -73,6 +73,8 @@
         "variant": "cpp",
         "codecvt": "cpp",
         "__nullptr": "cpp",
-        "__config": "cpp"
+        "__config": "cpp",
+        "ptx": "cpp",
+        "stream_ref": "cpp"
     }
 }

@@ -80,16 +80,6 @@ __global__ void cbycr422_to_bgr24(
     *(uint16_t *)&dst[dst_idx + 4] = data;
 }
 
-void convert_CbYCr_To_BGR24(uint8_t *__restrict__ src,
-                            uint8_t *__restrict__ dst,
-                            const uint32_t height,
-                            const uint32_t width)
-{
-    dim3 block(TILE_WIDTH, TILE_HEIGHT);
-    dim3 grid((width + (2 * TILE_WIDTH - 1)) / (2 * TILE_WIDTH), (height + TILE_HEIGHT - 1) / TILE_HEIGHT);
-    cbycr422_to_bgr24<<<grid, block>>>(src, dst, width, height, width * 2, width * 3);
-}
-
 __global__ void cbycr422_to_bgr24_f32_clamped(uint8_t *__restrict__ src,
                                               float *__restrict__ dst_r,
                                               float *__restrict__ dst_g,
@@ -220,32 +210,170 @@ void resize_BGR24_HD_to_1984x1984(std::shared_ptr<float> src_r,
                                    padding_width, padding_height, NPPI_INTER_LINEAR, context);
 }
 
-__global__ void print_kernel_u8(uint8_t *src, uint32_t size)
+__global__ void convert_CbYCr422ToBGR24_u8_C3R(
+    uint8_t *__restrict__ src, uint8_t *__restrict__ dst, int width, int height, int src_pitch, int dst_pitch)
 {
-    for (int i = 0; i < size; i++)
-        printf("src[%d] = %d\n", i, src[i]);
+    int x = 2 * (blockIdx.x * blockDim.x + threadIdx.x);
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height)
+        return;
+
+    union {
+        uint32_t double_word;
+        struct
+        {
+            uint8_t cb;
+            uint8_t y0;
+            uint8_t cr;
+            uint8_t y1;
+        };
+    } conv;
+
+    int32_t cb, y0, cr, y1, r0, g0, b0, r1, g1, b1;
+    uint8_t pair[2];
+
+    int32_t src_idx = y * src_pitch + 2 * x;
+    int32_t dst_idx = y * dst_pitch + 3 * x;
+    uint8_t *addr = src + src_idx;
+
+    conv.double_word = *(uint32_t *)addr;
+    uint16_t *halfword_1 = (uint16_t *)&dst[dst_idx];
+    uint16_t *halfword_2 = (uint16_t *)&dst[dst_idx + 2];
+    uint16_t *halfword_3 = (uint16_t *)&dst[dst_idx + 4];
+
+    cb = static_cast<int>(conv.cb) - 128;
+    y0 = 298 * (static_cast<int>(conv.y0) - 16);
+    cr = static_cast<int>(conv.cr) - 128;
+    y1 = 298 * (static_cast<int>(conv.y1) - 16);
+
+    r0 = (y0 + 409 * cr + 128) >> 8;
+    g0 = (y0 - 100 * cb - 208 * cr + 128) >> 8;
+    b0 = (y0 + 516 * cb + 128) >> 8;
+    r1 = (y1 + 409 * cr + 128) >> 8;
+    g1 = (y1 - 100 * cb - 208 * cr + 128) >> 8;
+    b1 = (y1 + 516 * cb + 128) >> 8;
+
+#if __CUDA_ARCH__ >= 900
+    pair[0] = static_cast<uint8_t>(__vimin_s32_relu(b0, 255));
+    pair[1] = static_cast<uint8_t>(__vimin_s32_relu(g0, 255));
+#else
+    pair[0] = static_cast<uint8_t>(min(max(b0, 0), 255));
+    pair[1] = static_cast<uint8_t>(min(max(g0, 0), 255));
+#endif
+    *halfword_1 = *(uint16_t *)&pair;
+
+#if __CUDA_ARCH__ >= 900
+    pair[0] = static_cast<uint8_t>(__vimin_s32_relu(r0, 255));
+    pair[1] = static_cast<uint8_t>(__vimin_s32_relu(b1, 255));
+#else
+    pair[0] = static_cast<uint8_t>(min(max(r0, 0), 255));
+    pair[1] = static_cast<uint8_t>(min(max(b1, 0), 255));
+#endif
+    *halfword_2 = *(uint16_t *)&pair;
+
+#if __CUDA_ARCH__ >= 900
+    pair[0] = static_cast<uint8_t>(__vimin_s32_relu(g1, 255));
+    pair[1] = static_cast<uint8_t>(__vimin_s32_relu(r1, 255));
+#else
+    pair[0] = static_cast<uint8_t>(min(max(g1, 0), 255));
+    pair[1] = static_cast<uint8_t>(min(max(r1, 0), 255));
+#endif
+    *halfword_3 = *(uint16_t *)&pair;
 }
 
-void print_gpu_memory_u8(std::shared_ptr<uint8_t> src, uint32_t size)
+constexpr int grid_x = (HD_WIDTH + (2 * TILE_WIDTH - 1)) / (2 * TILE_WIDTH);
+constexpr int grid_y = (HD_HEIGHT + TILE_HEIGHT - 1) / TILE_HEIGHT;
+
+void convert_CbYCrTOBGR24_u8C3R_f32_P3R(thrust::device_vector<uint8_t> &cbycr422_src,
+                                        thrust::host_vector<uint8_t> &h_bgr24,
+                                        thrust::device_vector<uint8_t> &d_bgr24,
+                                        thrust::device_vector<float> &int_f32_HD_P3R,
+                                        thrust::device_vector<float> &dst_f32_SQ_P3R,
+                                        NppStreamContext context,
+                                        cudaStream_t cpAsyncStream)
 {
-    printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
-    dim3 block(1, 1, 1);
-    dim3 grid(1, 1, 1);
+    if (cbycr422_src.size() != src_size || h_bgr24.size() != dst_rgb_size || d_bgr24.size() != dst_rgb_size ||
+        int_f32_HD_P3R.size() != int_f32_size || dst_f32_SQ_P3R.size() != dst_f32_size)
+    {
+        printf("INCORRECT SIZE OF THRUST VECTORS\n");
+        return;
+    }
 
-    print_kernel_u8<<<grid, block>>>(src.get(), size);
-}
+    // Calculate pitch for custom kernel
+    uint32_t src_pitch = HD_WIDTH * UYVY_BPP;
+    uint32_t dst_pitch = HD_WIDTH * RGB_BPP;
 
-__global__ void print_kernel_f32(float *src, uint32_t size)
-{
-    for (int i = 0; i < size; i++)
-        printf("src[%d] = %f\n", i, src[i]);
-}
+#ifndef DEBUG
+    dim3 block(TILE_WIDTH, TILE_HEIGHT);
+    dim3 grid(grid_x, grid_y);
+#else
+    dim3 block(1, 1);
+    dim3 grid(1, 1);
+#endif
 
-void print_gpu_memory_f32(std::shared_ptr<float> src, uint32_t size)
-{
-    printf("LOG: INFO -- %s entered\n", __PRETTY_FUNCTION__);
-    dim3 block(1, 1, 1);
-    dim3 grid(1, 1, 1);
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
 
-    print_kernel_f32<<<grid, block>>>(src.get(), size);
+    // WARM UP
+    for (int i = 0; i < 10; i++)
+        convert_CbYCr422ToBGR24_u8_C3R<<<grid, block>>>(thrust::raw_pointer_cast(cbycr422_src.data()),
+                                                        thrust::raw_pointer_cast(d_bgr24.data()), HD_WIDTH, HD_HEIGHT,
+                                                        src_pitch, dst_pitch);
+    float time = 0;
+    float milli = 0;
+
+    int device = 0;
+    int l2_size = 0;
+    uint8_t *device_l2_cache = nullptr;
+    cudaGetDevice(&device);
+    cudaDeviceGetAttribute(&l2_size, cudaDevAttrL2CacheSize, device);
+    size_t sizeF = l2_size * 2;
+
+    cudaMalloc((void **)&device_l2_cache, sizeF);
+
+    for (int i = 0; i < 100; i++)
+    {
+        cudaMemsetAsync((void *)device_l2_cache, 0, sizeF);
+        cudaDeviceSynchronize();
+
+        cudaEventRecord(start);
+        convert_CbYCr422ToBGR24_u8_C3R<<<grid, block>>>(thrust::raw_pointer_cast(cbycr422_src.data()),
+                                                        thrust::raw_pointer_cast(d_bgr24.data()), HD_WIDTH, HD_HEIGHT,
+                                                        src_pitch, dst_pitch);
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milli, start, stop);
+        time += milli;
+    }
+
+    printf("Average time: %f us\n", 1000.0f * (time / 100.0f));
+
+    // cudaDeviceSynchronize();
+    // printf("WORKING KERN\n");
+    // cbycr422_to_bgr24<<<grid, block>>>(thrust::raw_pointer_cast(cbycr422_src.data()),
+    //                                    thrust::raw_pointer_cast(d_bgr24.data()), HD_WIDTH, HD_HEIGHT, src_pitch,
+    //                                    dst_pitch);
+    // cudaMemcpyAsync(thrust::raw_pointer_cast(h_bgr24.data()), thrust::raw_pointer_cast(d_bgr24.data()), dst_rgb_size,
+    //                 cudaMemcpyDeviceToHost, cpAsyncStream);
+    h_bgr24 = d_bgr24;
+
+    // // RESIZE NEEDS REWORKING
+    // const Npp32f *src[3] = {src_r.get(), src_g.get(), src_b.get()};
+    // Npp32f *dst[3] = {dst_r.get(), dst_g.get(), dst_b.get()};
+    // NppiRect src_roi = {.x = 0, .y = 0, .width = src_width, .height = src_height};
+    // NppiRect dst_roi = {.x = 0, .y = 0, .width = 1984, .height = 1984};
+    // NppiSize src_size = {.width = src_width, .height = src_height};
+    // int32_t src_step = src_size.width * sizeof(float);
+    // int32_t dst_step = dst_roi.width * sizeof(float);
+    // double scale_factor = std::min(dst_roi.width / (src_width * 1.0), dst_roi.height / (src_height * 1.0));
+    // int new_width = std::ceil(scale_factor * src_width);
+    // int new_height = std::ceil(scale_factor * src_height);
+    // float padding_width = (dst_roi.width - new_width) / 2;
+    // float padding_height = (dst_roi.height - new_height) / 2;
+
+    // nppiResizeSqrPixel_32f_P3R_Ctx(src, src_size, src_step, src_roi, dst, dst_step, dst_roi, scale_factor,
+    // scale_factor,
+    //                                padding_width, padding_height, NPPI_INTER_LINEAR, context);
 }

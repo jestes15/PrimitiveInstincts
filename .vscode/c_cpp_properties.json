@@ -5,7 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/local/cuda/include",
-                "/usr/include/opencv4"
+                "/usr/include/opencv4",
+                "/usr/local/nvidia-optix-9.0.0/include"
             ],
             "defines": [],
             "cStandard": "c17",
