@@ -14,7 +14,6 @@ source /apps/profiles/modules_asax.sh.dyn
 
 module load oneapi
 module load cuda
-module load gcc/14.2.0
 
 cp ASA/Makefile .
 

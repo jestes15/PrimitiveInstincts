@@ -15,9 +15,10 @@ int main()
 
     // for (auto i : std::views::iota(0, 99))
     // {
-    //     printf("RUN: %d\n", i);
-    //     cv::Mat rgb_image_mat;
-    //     cv::Mat image = cv::imread(std::format("test_sets/images_1920x1080/image_{}.jpg", i));
+    // std::stringstream ss;
+    // ss << "test_sets/images_3840x2160/image_" << i << ".jpg";
+    // cv::Mat rgb_image_mat;
+    // cv::Mat image = cv::imread(ss.str());
     //     cv:: cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
     //     std::memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
     //     ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
@@ -43,10 +44,12 @@ int main()
     rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
     run = 0;
 
-    for (auto i : std::views::iota(0, 99))
+    for (int i = 0; i < 100; i++)
     {
+        std::stringstream ss;
+        ss << "test_sets/images_3840x2160/image_" << i << ".jpg";
         cv::Mat rgb_image_mat;
-        cv::Mat image = cv::imread(std::format("test_sets/images_3840x2160/image_{}.jpg", i));
+        cv::Mat image = cv::imread(ss.str());
         cv::cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
         memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
         ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
