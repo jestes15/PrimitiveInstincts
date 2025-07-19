@@ -1,36 +1,64 @@
-#include "cuda_mem_ctrl.hpp"
-#include "kernels.h"
+#include "img_conv.hpp"
 
-#include <opencv2/opencv.hpp>
+#include <ranges>
 
 int main()
 {
-    cuInit(0);
+    int width = 1920, height = 1080;
+    std::uint8_t *cbycr_image = nullptr;
+    std::uint8_t *rgb_image = nullptr;
+    uint64_t run = 0;
 
-    cv::Mat image = cv::imread("test_sets/images_1920x1080/image_72.jpg");
-    cudaStream_t stream;
-    thrust::host_vector<uint8_t> hOriginal(dst_rgb_size);
-    thrust::device_vector<uint8_t> dOriginal(dst_rgb_size);
-    thrust::device_vector<uint8_t> dCbYCr(src_size);
-    thrust::host_vector<uint8_t> hFinBGR(dst_rgb_size);
-    thrust::device_vector<uint8_t> dFinBGR(dst_rgb_size);
-    thrust::device_vector<float> int_f32_HD_P3R(HD_WIDTH * HD_HEIGHT);
-    thrust::device_vector<float> dst_f32_SQ_P3R(SQ_WIDTH * SQ_HEIGHT);
+    // img_conv image_class_hd(width, height, 1984, 1984);
+    // cbycr_image = (std::uint8_t *)ippMalloc_L(width * height * 2);
+    // rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
 
-    std::copy(image.data, image.data + (HD_WIDTH * HD_HEIGHT * 3), hOriginal.begin());
-    dOriginal = hOriginal;
+    // for (auto i : std::views::iota(0, 99))
+    // {
+    //     printf("RUN: %d\n", i);
+    //     cv::Mat rgb_image_mat;
+    //     cv::Mat image = cv::imread(std::format("test_sets/images_1920x1080/image_{}.jpg", i));
+    //     cv:: cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
+    //     std::memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
+    //     ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
+    //     image_class_hd.upload_data(cbycr_image);
 
-    auto context = npp_stream_ctx::create_npp_stream_ctx();
-    cudaStreamCreate(&stream);
+    //     for (auto &kernel : enum_str_map)
+    //     {
+    //         printf("KERN RUN: %lu\n", run++);
+    //         image_class_hd.convert_CbYCrToBGR(kernel.first);
+    //     }
+    // }
 
-    nppiRGB24ToCbYCr422(thrust::raw_pointer_cast(dOriginal.data()), thrust::raw_pointer_cast(dCbYCr.data()), HD_WIDTH,
-                        HD_HEIGHT, context);
-    convert_CbYCrTOBGR24_u8C3R_f32_P3R(dCbYCr, hFinBGR, dFinBGR, int_f32_HD_P3R, dst_f32_SQ_P3R, context, stream);
+    // ippFree(cbycr_image);
+    // ippFree(rgb_image);
 
-    cv::Mat image_hd(HD_HEIGHT, HD_WIDTH, CV_8UC3, hFinBGR.data());
+    cbycr_image = nullptr;
+    rgb_image = nullptr;
 
-    cv::imshow("Image", image_hd);
+    width = 3840;
+    height = 2160;
+    img_conv image_class_4k(width, height, 1984, 1984);
+    cbycr_image = (std::uint8_t *)ippMalloc_L(width * height * 2);
+    rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
+    run = 0;
 
-    cv::waitKey(0);
-    cv::destroyAllWindows();
+    for (auto i : std::views::iota(0, 99))
+    {
+        cv::Mat rgb_image_mat;
+        cv::Mat image = cv::imread(std::format("test_sets/images_3840x2160/image_{}.jpg", i));
+        cv::cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
+        memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
+        ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
+        image_class_4k.upload_data(cbycr_image);
+
+        for (auto &kernel : enum_str_map)
+        {
+            printf("KERN RUN: %lu\n", run++);
+            image_class_4k.convert_CbYCrToBGR(kernel.first);
+        }
+    }
+
+    ippFree(cbycr_image);
+    ippFree(rgb_image);
 }

@@ -5,13 +5,16 @@ EXE = main
 
 CUDA_COMPILER = nvcc
 
-OPENCV_INCLUDE_DIR = /usr/include/opencv4
+OPENCV_INCLUDE_DIR = /usr/local/include/opencv4
+IPP_INCLUDE_DIR = /opt/intel/oneapi/2025.2/include
 
-CUDA_LD_FLAGS = -lcuda -lcupti -lnppc -lnppial -lnppicc -lnppidei -lnppif -lnppig -lnppim
-OPENCV_LD_FLAGS = -lopencv_highgui -lopencv_imgcodecs -lopencv_imgproc -lopencv_core 
+CUDA_LD_FLAGS = -lcuda -lcupti -lnppc -lnppial -lnppicc -lnppidei -lnppif -lnppig -lnppim -lcublas -lcudart
+IPP_LD_FLAGS = -L /opt/intel/oneapi/2025.2/lib/intel64 -lippi -lippcore -lipps -lippcc -lippdc
+OPENCV_LD_FLAGS = -L /usr/local/lib -lopencv_highgui -lopencv_imgcodecs -lopencv_imgproc -lopencv_core -lopencv_cudaarithm -lopencv_cudawarping -lopencv_cudaimgproc
 
-CXX_FLAGS = -Wno-deprecated-gpu-targets -g -O2 -std=c++20 --generate-line-info -arch=compute_89 -code=sm_89 -Xcudafe "--diag_suppress=611" -I $(INC_DIR) -isystem $(OPENCV_INCLUDE_DIR)
-LD_FLAGS = -Wno-deprecated-gpu-targets $(CUDA_LD_FLAGS) $(OPENCV_LD_FLAGS)
+INC_FLAGS = -I $(INC_DIR) -isystem $(OPENCV_INCLUDE_DIR) -isystem $(IPP_INCLUDE_DIR)
+CXX_FLAGS = -Wno-deprecated-gpu-targets -g -O3 -std=c++20 --generate-line-info -arch=compute_90a -code=sm_90a -Xcudafe "--diag_suppress=611" $(INC_FLAGS)
+LD_FLAGS = -Wno-deprecated-gpu-targets $(CUDA_LD_FLAGS) $(OPENCV_LD_FLAGS) $(IPP_LD_FLAGS)
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cu)
 OBJ_FILES := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.o,$(SRC_FILES))
@@ -31,7 +34,7 @@ $(CTRL_OBJ_DIR)/%.o: $(CTRL_DIR)/%.cu $(OBJ_FILES)
 # Rule to link test executables, linking with all object files from src
 $(EXE): $(OBJ_FILES)
 	@mkdir -p $(@D)
-	$(CUDA_COMPILER) $(LD_FLAGS) $^ -o $@
+	$(CUDA_COMPILER) $^ -o $@ $(LD_FLAGS)
 
 .PHONY: clean
 clean:

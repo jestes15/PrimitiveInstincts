@@ -75,6 +75,7 @@
         "__nullptr": "cpp",
         "__config": "cpp",
         "ptx": "cpp",
-        "stream_ref": "cpp"
+        "stream_ref": "cpp",
+        "expected": "cpp"
     }
 }
