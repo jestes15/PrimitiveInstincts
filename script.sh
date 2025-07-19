@@ -19,7 +19,7 @@ cp ASA/Makefile .
 
 make
 
-LD_LIBRARY_PATH=/home/aubjne001/opencv_install/lib64:/apps/x86-64/apps/intel_2023.1.0/ipp/latest/lib/intel64:$LD_LIBRARY_PATH --config-file off --export /home/aubjne001/4k_profile --force-overwrite --set full --import-source yes main ./main
+LD_LIBRARY_PATH=/home/aubjne001/opencv_install/lib64:/apps/x86-64/apps/intel_2023.1.0/ipp/latest/lib/intel64:$LD_LIBRARY_PATH ncu --config-file off --export /home/aubjne001/4k_profile --force-overwrite --set full --import-source yes main ./main
 
 # footer-begin ------------------------------------------
 # default.Shell
