@@ -15,10 +15,10 @@
 
 #include <cublas_v2.h>
 #include <cuda.h>
+#include <cudaProfiler.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <functional>
-#include <cudaProfiler.h>
 #include <ipp.h>
 #include <memory>
 #include <npp.h>
@@ -26,6 +26,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <type_traits>
+
+#include <cuda/barrier>
+#include <cuda/pipeline>
 
 #define NUM_OF_CHANNELS 3
 
@@ -65,8 +68,7 @@ struct sizes_t
     int output_height;
 };
 
-union conversion_union
-{
+union conversion_union {
     uint32_t double_word;
     struct
     {
@@ -94,10 +96,7 @@ struct half_constants
 
 class img_conv
 {
-private:
-    static const int TILE_WIDTH = 32;
-    static const int TILE_HEIGHT = 4;
-
+  private:
     NppStreamContext context;
     cublasHandle_t cublas_handle;
     sizes_t sizes;
@@ -127,11 +126,12 @@ private:
     half_constants constants;
     NppStreamContext create_npp_stream_ctx();
 
-public:
+  public:
     img_conv(int input_width, int input_height, int output_width, int output_height);
 
     int upload_data(std::uint8_t *image);
     int upload_reference(float *image);
+    int copy_dst_to_reference();
 
     // Get source pointer
     uint8_t *get_u8_ptr();

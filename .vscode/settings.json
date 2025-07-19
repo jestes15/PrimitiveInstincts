@@ -76,6 +76,8 @@
         "__config": "cpp",
         "ptx": "cpp",
         "stream_ref": "cpp",
-        "expected": "cpp"
+        "expected": "cpp",
+        "pipeline": "cpp",
+        "barrier": "cpp"
     }
 }

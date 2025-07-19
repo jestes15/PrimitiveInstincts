@@ -24,10 +24,24 @@ int main()
         ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
         image_class_hd.upload_data(cbycr_image);
 
+        bool ref_st = false;
+
         for (auto &kernel : enum_str_map)
         {
             printf("KERN RUN: %lu\n", run++);
             image_class_hd.convert_CbYCrToBGR(kernel.first);
+            if (kernel.first == FMA_IMPL_INTEL_BT601_FP16_TO_FP32)
+            {
+                image_class_hd.copy_dst_to_reference();
+                ref_st = true;
+            }
+
+            if (kernel.first == FMA_IMPL_INTEL_BT601_FP16 && ref_st) {
+                auto [refnrm, dutnrm, divnrm] = image_class_hd.compute_rel_err();
+                printf("REF NRM: %f\n", refnrm);
+                printf("DUT NRM: %f\n", dutnrm);
+                printf("DIV NRM: %f\n", divnrm);
+            }
         }
     }
 

@@ -10,6 +10,9 @@
 
 #include "img_conv.hpp"
 
+#define TILE_WIDTH 32
+#define TILE_HEIGHT 8
+
 img_conv::img_conv(int input_width, int input_height, int output_width, int output_height)
 {
     sizes.input_width = input_width;
@@ -636,6 +639,86 @@ __global__ void convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16(uint8_t *_
     *(uint32_t *)&dst_g[dst_f16_idx] = *(uint32_t *)&pixel;
 }
 
+#pragma nv_diag_suppress static_var_with_dynamic_init
+
+__global__ void convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16_exp(uint8_t *__restrict__ src,
+                                                                          half *__restrict__ dst_r,
+                                                                          half *__restrict__ dst_g,
+                                                                          half *__restrict__ dst_b,
+                                                                          const int width,
+                                                                          const int height,
+                                                                          const int src_pitch,
+                                                                          const int dst_f16_pitch,
+                                                                          const half_constants constants)
+{
+    // 1024 Bytes
+    __shared__ uint32_t input_image_data[TILE_WIDTH * TILE_HEIGHT];
+    __shared__ cuda::barrier<cuda::thread_scope_block> barrier;
+    conversion_union conv;
+
+    if (threadIdx.x == 0 && threadIdx.y == 0)
+        init(&barrier, blockDim.x * blockDim.y);
+
+    __syncthreads();
+
+    if (threadIdx.x == 0 && threadIdx.y == 0)
+    {
+        int64_t src_u8_idx = (blockIdx.y * TILE_HEIGHT) * src_pitch + 128 * (blockIdx.x * TILE_WIDTH);
+        cuda::memcpy_async(&input_image_data[0], src + src_u8_idx, 128 * sizeof(uint32_t) * TILE_WIDTH * TILE_HEIGHT,
+                           barrier);
+    }
+
+    int x = 2 * (blockIdx.x * blockDim.x + threadIdx.x);
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= width || y >= height)
+        return;
+
+    half cb, y0, cr, y1;
+    half scaled_y0, scaled_y1;
+    half cr_rpx, cr_gpx, cb_gpx, cb_bpx, cbcr_gpx;
+    half2 red, green, blue;
+    half2 pixel;
+
+    int64_t dst_f16_idx = y * dst_f16_pitch + x;
+    half *red_ptr = dst_r + dst_f16_idx;
+    half *grn_ptr = dst_g + dst_f16_idx;
+    half *blu_ptr = dst_b + dst_f16_idx;
+
+    barrier.arrive_and_wait();
+    conv.double_word = input_image_data[threadIdx.y * TILE_HEIGHT + threadIdx.x];
+    cb = __float2half(conv.cb);
+    y0 = __float2half(conv.y0);
+    cr = __float2half(conv.cr);
+    y1 = __float2half(conv.y1);
+
+    scaled_y0 = __hfma(constants.y_multiplicand, y0, constants.y_addend);
+    scaled_y1 = __hfma(constants.y_multiplicand, y1, constants.y_addend);
+    cr_rpx = __hfma(constants.cr_rpx_multiplicand, cr, constants.cr_rpx_addend);
+    cr_gpx = __hfma(constants.cr_gpx_multiplicand, cr, constants.cr_gpx_addend);
+    cb_gpx = __hfma(constants.cb_gpx_multiplicand, cb, constants.cb_gpx_addend);
+    red.x = __hadd(scaled_y0, cr_rpx);
+    red.y = __hadd(scaled_y1, cr_rpx);
+    cb_bpx = __hfma(constants.cb_bpx_multiplicand, cb, constants.cb_bpx_addend);
+    cbcr_gpx = __hadd(cr_gpx, cb_gpx);
+    green.x = __hadd(scaled_y0, cbcr_gpx);
+    green.y = __hadd(scaled_y1, cbcr_gpx);
+    blue.x = __hadd(scaled_y0, cb_bpx);
+    blue.y = __hadd(scaled_y1, cb_bpx);
+
+    pixel.x = __hmul_sat(red.x, constants.recip);
+    pixel.y = __hmul_sat(red.y, constants.recip);
+    *(uint32_t *)red_ptr = *(uint32_t *)&pixel;
+
+    pixel.x = __hmul_sat(green.x, constants.recip);
+    pixel.y = __hmul_sat(green.y, constants.recip);
+    *(uint32_t *)grn_ptr = *(uint32_t *)&pixel;
+
+    pixel.x = __hmul_sat(blue.x, constants.recip);
+    pixel.y = __hmul_sat(blue.y, constants.recip);
+    *(uint32_t *)blu_ptr = *(uint32_t *)&pixel;
+}
+
 __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601_FP16(uint8_t *__restrict__ src,
                                                                       float *__restrict__ dst_r,
                                                                       float *__restrict__ dst_g,
@@ -863,7 +946,7 @@ void img_conv::convert_CbYCrToBGR(uint8_t conv_type)
             sizes.input_height, src_pitch, pitch_f32);
         break;
     case FMA_IMPL_INTEL_BT601_FP16:
-        convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16<<<grid, block, 0, context.hStream>>>(
+        convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16_exp<<<grid, block, 0, context.hStream>>>(
             src_image, reinterpret_cast<half *>(int_channels_f16[0]), reinterpret_cast<half *>(int_channels_f16[1]),
             reinterpret_cast<half *>(int_channels_f16[2]), sizes.input_width, sizes.input_height, src_pitch, pitch_f16,
             constants);
@@ -947,6 +1030,12 @@ int img_conv::upload_reference(float *image)
 
     return cudaMemcpy(reference, image, sizeof(float) * sizes.output_height * sizes.output_width * NUM_OF_CHANNELS,
                       cudaMemcpyHostToDevice);
+}
+
+int img_conv::copy_dst_to_reference()
+{
+    return cudaMemcpy(reference, dst_f32, sizeof(float) * sizes.output_height * sizes.output_width * NUM_OF_CHANNELS,
+                      cudaMemcpyDeviceToDevice);
 }
 
 std::uint8_t *img_conv::get_u8_ptr()
