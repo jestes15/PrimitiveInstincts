@@ -22,8 +22,6 @@
 #include <ipp.h>
 #include <memory>
 #include <npp.h>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudawarping.hpp>
 #include <opencv2/opencv.hpp>
 #include <stdint.h>
 #include <stdio.h>
