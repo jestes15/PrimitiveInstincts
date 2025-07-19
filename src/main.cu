@@ -13,7 +13,7 @@ int main()
     cbycr_image = (std::uint8_t *)ippMalloc_L(width * height * 2);
     rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
 
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 5; i++)
     {
         std::stringstream ss;
         ss << "test_sets/images_1920x1080/image_" << i << ".jpg";
