@@ -1,34 +1,19 @@
-// header-begin ------------------------------------------
-// File       : img_conv.hpp
-//
-// Author      : Joshua E
-// Email       : estesjn2020@gmail.com
-//
-// Created on  : 7/18/2025
-//
-// header-end --------------------------------------------
-
-#ifndef IMG_CONV_HPP
-#define IMG_CONV_HPP
-
 #include "image_sizes.h"
 
 #include <cublas_v2.h>
 #include <cuda.h>
-#include <cudaProfiler.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <functional>
 #include <ipp.h>
 #include <memory>
 #include <npp.h>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudawarping.hpp>
 #include <opencv2/opencv.hpp>
 #include <stdint.h>
 #include <stdio.h>
 #include <type_traits>
-
-#include <cuda/barrier>
-#include <cuda/pipeline>
 
 #define NUM_OF_CHANNELS 3
 
@@ -68,14 +53,15 @@ struct sizes_t
     int output_height;
 };
 
-union conversion_union {
+union conversion_union
+{
     uint32_t double_word;
     struct
     {
-        uint8_t cb;
-        uint8_t y0;
-        uint8_t cr;
-        uint8_t y1;
+        std::uint8_t cb;
+        std::uint8_t y0;
+        std::uint8_t cr;
+        std::uint8_t y1;
     };
 };
 
@@ -96,20 +82,27 @@ struct half_constants
 
 class img_conv
 {
-  private:
+private:
+    static const int TILE_WIDTH = 32;
+    static const int TILE_HEIGHT = 4;
+
     NppStreamContext context;
     cublasHandle_t cublas_handle;
     sizes_t sizes;
 
-    uint8_t *src_image = nullptr;
+    // Device Pointers
+    std::uint8_t *src_image = nullptr;
     float *int_f32 = nullptr;
     __half *int_f16 = nullptr;
     __half *dst_f16 = nullptr;
     float *dst_f32 = nullptr;
     float *reference = nullptr;
 
+    // Host Pointers
+    std::uint8_t *cbycr_image = nullptr;
+    cv::Mat final_image;
+
     int src_pitch, pitch_f32, pitch_f16;
-    int new_width, new_height;
     float scale_factor;
     float padding_width, padding_height;
 
@@ -126,28 +119,27 @@ class img_conv
     half_constants constants;
     NppStreamContext create_npp_stream_ctx();
 
-  public:
+    cv::Mat normalize_cv_mat(const cv::Mat &input, bool aNormalize);
+    cv::Mat resize_with_aspect_ratio(const cv::Mat &input);
+
+public:
     img_conv(int input_width, int input_height, int output_width, int output_height);
 
     int upload_data(std::uint8_t *image);
     int upload_reference(float *image);
-    int copy_dst_to_reference();
+    int upload_reference();
+    void set_cbycr_image(std::uint8_t *cbycr_image);
 
     // Get source pointer
-    uint8_t *get_u8_ptr();
+    std::uint8_t *get_u8_ptr();
 
     // Get destinitation pointer
     float *get_f32_ptr();
     half *get_f16_ptr();
 
     ~img_conv();
-    void convert_CbYCrToBGR(uint8_t conv_type);
+    void convert_CbYCrToBGR(std::uint8_t conv_type);
+    void create_reference_image();
+    void zero_data();
     std::tuple<float, float, float> compute_rel_err();
 };
-
-#endif // IMG_CONV_HPP
-
-// footer-begin ------------------------------------------
-// default.C++
-// File       : img_conv.hpp
-// footer-end --------------------------------------------
