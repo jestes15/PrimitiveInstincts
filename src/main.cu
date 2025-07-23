@@ -1,81 +1,126 @@
 #include "img_conv.hpp"
 
-#include <ranges>
+#include <filesystem>
+#include <opencv2/cudaarithm.hpp>
+#include <opencv2/cudawarping.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/utils/logger.hpp>
 
-int main()
+void display_image(float *device_image, int width, int height)
 {
-    int width = 1920, height = 1080;
-    std::uint8_t *cbycr_image = nullptr;
-    std::uint8_t *rgb_image = nullptr;
-    uint64_t run = 0;
+    float *host_image = nullptr;
+    cudaMallocHost((void **)&host_image, sizeof(float) * width * height);
+    cudaMemcpy(host_image, device_image, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
 
-    img_conv image_class_hd(width, height, 1984, 1984);
-    cbycr_image = (std::uint8_t *)ippMalloc_L(width * height * 2);
-    rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
+    cv::Mat image(height, width, CV_32FC1, host_image);
+    cv::namedWindow("Window", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Window", 800, 800);
+    cv::imshow("Window", image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
 
-    for (int i = 0; i < 5; i++)
+    cudaFree(host_image);
+}
+
+int main(int argc, char *argv[])
+{
+    if (argc != 4)
     {
-        std::stringstream ss;
-        ss << "test_sets/images_1920x1080/image_" << i << ".jpg";
-        cv::Mat rgb_image_mat;
-        cv::Mat image = cv::imread(ss.str());
-        cv::cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
-        memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
-        ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
-        image_class_hd.upload_data(cbycr_image);
-
-        bool ref_st = false;
-
-        for (auto &kernel : enum_str_map)
-        {
-            printf("KERN RUN: %lu\n", run++);
-            image_class_hd.convert_CbYCrToBGR(kernel.first);
-            if (kernel.first == FMA_IMPL_INTEL_BT601_FP16_TO_FP32)
-            {
-                image_class_hd.copy_dst_to_reference();
-                ref_st = true;
-            }
-
-            if (kernel.first == FMA_IMPL_INTEL_BT601_FP16 && ref_st) {
-                auto [refnrm, dutnrm, divnrm] = image_class_hd.compute_rel_err();
-                printf("REF NRM: %f\n", refnrm);
-                printf("DUT NRM: %f\n", dutnrm);
-                printf("DIV NRM: %f\n", divnrm);
-            }
-        }
+        printf("Too few arguemnts...\n");
+        printf("Usage:\n");
+        printf("\timg_conv_test /path/to/images output_width output_height");
+        exit(EXIT_FAILURE);
     }
 
-    ippFree(cbycr_image);
-    ippFree(rgb_image);
+    int output_width = std::atoi(argv[2]);
+    int output_height = std::atoi(argv[3]);
 
-    // cbycr_image = nullptr;
-    // rgb_image = nullptr;
+    cv::utils::logging::setLogLevel(cv::utils::logging::LogLevel::LOG_LEVEL_SILENT);
+    std::set<std::string> image_extensions = {".jpg", ".jpeg", ".png"};
+    std::vector<float> accum(enum_str_map.size());
+    std::vector<std::string> image_filepaths;
+    uint8_t *rgb_image_ptr = nullptr;
+    uint8_t *cbycr_image_ptr = nullptr;
 
-    // width = 3840;
-    // height = 2160;
-    // img_conv image_class_4k(width, height, 1984, 1984);
-    // cbycr_image = (std::uint8_t *)ippMalloc_L(width * height * 2);
-    // rgb_image = (std::uint8_t *)ippMalloc_L(width * height * 3);
-    // run = 0;
+    bool uniform_sizes = true;
+    int width = -1, height = -1;
 
-    // for (int i = 0; i < 100; i++)
-    // {
-    //     std::stringstream ss;
-    //     ss << "test_sets/images_3840x2160/image_" << i << ".jpg";
-    //     cv::Mat rgb_image_mat;
-    //     cv::Mat image = cv::imread(ss.str());
-    //     cv::cvtColor(image, rgb_image_mat, cv::COLOR_BGR2RGB);
-    //     memcpy(rgb_image, rgb_image_mat.ptr<void>(), width * height * 3);
-    //     ippiRGBToCbYCr422_8u_C3C2R(rgb_image, width * 3, cbycr_image, width * 2, {width, height});
-    //     image_class_4k.upload_data(cbycr_image);
+    for (const auto &file : std::filesystem::recursive_directory_iterator(argv[1]))
+    {
+        if (!file.is_regular_file())
+            continue;
 
-    //     for (auto &kernel : enum_str_map)
-    //     {
-    //         printf("KERN RUN: %lu\n", run++);
-    //         image_class_4k.convert_CbYCrToBGR(kernel.first);
-    //     }
-    // }
+        if (image_extensions.count(file.path().extension()) == 0)
+            continue;
 
-    // ippFree(cbycr_image);
-    // ippFree(rgb_image);
+        image_filepaths.push_back(file.path());
+
+        cv::Mat img = cv::imread(file.path());
+
+        if (width == -1)
+            width = img.cols;
+
+        if (height == -1)
+            height = img.rows;
+
+        if (width != img.cols && height != img.rows)
+            uniform_sizes = false;
+    }
+
+    if (!uniform_sizes)
+    {
+        std::cout << "All images must be uniform in size\n";
+        exit(EXIT_FAILURE);
+    }
+
+    IppiSize ipp_roi = {
+        .width = width,
+        .height = height};
+
+    rgb_image_ptr = reinterpret_cast<uint8_t *>(ippMalloc(width * height * ImageDefinitions::RGB_BPP));
+    cbycr_image_ptr = reinterpret_cast<uint8_t *>(ippMalloc(width * height * ImageDefinitions::UYVY_BPP));
+    img_conv testing_class(width, height, output_width, output_height);
+
+    int progress = 0;
+
+    for (const auto &file : image_filepaths)
+    {
+        std::cout << "[" << progress++ << "/" << image_filepaths.size() << "]\r";
+
+        cv::Mat rgb_image;
+        cv::Mat bgr_image = cv::imread(file);
+        cv::cvtColor(bgr_image, rgb_image, cv::COLOR_BGR2RGB);
+
+        memcpy(rgb_image_ptr, rgb_image.ptr<void>(), width * height * ImageDefinitions::RGB_BPP);
+        ippiRGBToCbYCr422_8u_C3C2R(rgb_image_ptr, width * ImageDefinitions::RGB_BPP, cbycr_image_ptr, width * ImageDefinitions::UYVY_BPP, ipp_roi);
+
+        testing_class.set_cbycr_image(cbycr_image_ptr);
+        testing_class.upload_data(cbycr_image_ptr);
+        testing_class.create_reference_image();
+
+        for (auto &i : enum_str_map)
+        {
+            testing_class.upload_reference();
+            testing_class.convert_CbYCrToBGR(i.first);
+            auto [ref_nrm, dut_nrm, diff] = testing_class.compute_rel_err();
+            testing_class.zero_data();
+
+            std::cout << file << ":\t" << ref_nrm << " " << dut_nrm << " " << diff << "\n";
+
+            accum[i.first] += diff;
+        }
+
+        break;
+    }
+
+    for (auto &i : enum_str_map)
+    {
+        std::cout << "Result for " << i.second << ": " << accum[i.first] / 1 << "\n";
+        // std::cout << "Result for " << i.second << ": " << accum[i.first] / image_filepaths.size() << "\n";
+    }
+
+    ippFree(rgb_image_ptr);
+    ippFree(cbycr_image_ptr);
+
+    std::cout << std::endl;
 }
