@@ -173,7 +173,7 @@ int main()
         std::cout << '\r' << i + 1 << "/100\t[" << std::string(i, '.') << std::string(99 - i, ' ') << "]";
 
         std::stringstream ss;
-        ss << "images_1920x1080/image_" << i << ".jpg";
+        ss << "/home/bl4z3/develop/PrimitiveInstincts/test_sets/images_1920x1080/image_" << i << ".jpg";
         cv::Mat pimage = cv::imread(ss.str());
         cv::Mat image;
         cv::cvtColor(pimage, image, cv::COLOR_BGR2RGB);
