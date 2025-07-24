@@ -86,7 +86,6 @@ int main(int argc, char *argv[])
             testing_class.upload_reference();
             testing_class.convert_CbYCrToBGR(i.first);
             auto [ref_nrm, dut_nrm, diff] = testing_class.compute_rel_err();
-            testing_class.zero_data();
 
             std::cout << file << ":\t" << ref_nrm << " " << dut_nrm << " " << diff << "\n";
 

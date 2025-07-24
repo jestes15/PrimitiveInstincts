@@ -271,9 +271,6 @@ void img_conv::create_reference_image()
     cv::Mat tResizedInputImage = resize_with_aspect_ratio(tDeviceImageMat);
     final_image = normalize_cv_mat(tResizedInputImage, true);
 
-    if (false)
-        display_image_cpu(rgb, sizes.input_width, sizes.input_height);
-
     ippFree(rgb);
 }
 
@@ -1064,7 +1061,7 @@ int img_conv::upload_reference(float *image)
 
 int img_conv::upload_reference()
 {
-    return cudaMemcpy(reference, final_image.data,
+    return cudaMemcpy(reference, final_image.ptr<void>(),
                       sizeof(float) * sizes.output_height * sizes.output_width * NUM_OF_CHANNELS,
                       cudaMemcpyHostToDevice);
 }
