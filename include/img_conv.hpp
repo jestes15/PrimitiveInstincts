@@ -8,8 +8,7 @@
 #include <ipp.h>
 #include <memory>
 #include <npp.h>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudawarping.hpp>
+
 #include <opencv2/opencv.hpp>
 #include <stdint.h>
 #include <stdio.h>
@@ -53,8 +52,7 @@ struct sizes_t
     int output_height;
 };
 
-union conversion_union
-{
+union conversion_union {
     uint32_t double_word;
     struct
     {
@@ -82,7 +80,7 @@ struct half_constants
 
 class img_conv
 {
-private:
+  private:
     static const int TILE_WIDTH = 32;
     static const int TILE_HEIGHT = 4;
 
@@ -122,24 +120,19 @@ private:
     cv::Mat normalize_cv_mat(const cv::Mat &input, bool aNormalize);
     cv::Mat resize_with_aspect_ratio(const cv::Mat &input);
 
-public:
+  public:
     img_conv(int input_width, int input_height, int output_width, int output_height);
-
-    int upload_data(std::uint8_t *image);
-    int upload_reference(float *image);
-    int upload_reference();
-    void set_cbycr_image(std::uint8_t *cbycr_image);
-
-    // Get source pointer
-    std::uint8_t *get_u8_ptr();
-
-    // Get destinitation pointer
-    float *get_f32_ptr();
-    half *get_f16_ptr();
-
     ~img_conv();
+    
     void convert_CbYCrToBGR(std::uint8_t conv_type);
     void create_reference_image();
     void zero_data();
     std::tuple<float, float, float> compute_rel_err();
+    int upload_data(std::uint8_t *image);
+    int upload_reference(float *image);
+    int upload_reference();
+    void set_cbycr_image(std::uint8_t *cbycr_image);
+    std::uint8_t *get_u8_ptr();
+    float *get_f32_ptr();
+    half *get_f16_ptr();
 };

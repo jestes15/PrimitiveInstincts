@@ -1,26 +1,9 @@
 #include "img_conv.hpp"
 
 #include <filesystem>
-#include <opencv2/cudaarithm.hpp>
-#include <opencv2/cudawarping.hpp>
+
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/utils/logger.hpp>
-
-void display_image(float *device_image, int width, int height)
-{
-    float *host_image = nullptr;
-    cudaMallocHost((void **)&host_image, sizeof(float) * width * height);
-    cudaMemcpy(host_image, device_image, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
-
-    cv::Mat image(height, width, CV_32FC1, host_image);
-    cv::namedWindow("Window", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Window", 800, 800);
-    cv::imshow("Window", image);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
-
-    cudaFree(host_image);
-}
 
 int main(int argc, char *argv[])
 {
@@ -28,7 +11,7 @@ int main(int argc, char *argv[])
     {
         printf("Too few arguemnts...\n");
         printf("Usage:\n");
-        printf("\timg_conv_test /path/to/images output_width output_height");
+        printf("\timg_conv_test /path/to/images output_width output_height\n");
         exit(EXIT_FAILURE);
     }
 
@@ -113,11 +96,10 @@ int main(int argc, char *argv[])
         break;
     }
 
-    for (auto &i : enum_str_map)
-    {
-        std::cout << "Result for " << i.second << ": " << accum[i.first] / 1 << "\n";
-        // std::cout << "Result for " << i.second << ": " << accum[i.first] / image_filepaths.size() << "\n";
-    }
+    // for (auto &i : enum_str_map)
+    // {
+    //     std::cout << "Result for " << i.second << ": " << accum[i.first] / image_filepaths.size() << "\n";
+    // }
 
     ippFree(rgb_image_ptr);
     ippFree(cbycr_image_ptr);

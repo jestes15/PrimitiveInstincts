@@ -78,6 +78,7 @@
         "stream_ref": "cpp",
         "expected": "cpp",
         "pipeline": "cpp",
-        "barrier": "cpp"
+        "barrier": "cpp",
+        "text_encoding": "cpp"
     }
 }

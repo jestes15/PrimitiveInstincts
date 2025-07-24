@@ -1,5 +1,41 @@
 #include "img_conv.hpp"
 
+[[nodiscard]] void display_image(float *device_image, int width, int height)
+{
+    float *host_image = nullptr;
+    cudaMallocHost((void **)&host_image, sizeof(float) * width * height);
+    cudaMemcpy(host_image, device_image, sizeof(float) * width * height, cudaMemcpyDeviceToHost);
+
+    cv::Mat image(height, width, CV_32FC1, host_image);
+    cv::namedWindow("Window", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Window", 800, 800);
+    cv::imshow("Window", image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+
+    cudaFreeHost(host_image);
+}
+
+[[nodiscard]] void display_image_cpu(uint8_t *host_image, int width, int height)
+{
+    cv::Mat image(height, width, CV_8UC3, host_image);
+    cv::namedWindow("Window", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Window", 800, 800);
+    cv::imshow("Window", image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
+[[nodiscard]] void display_image_cpu(float *host_image, int width, int height)
+{
+    cv::Mat image(height, width, CV_32FC1, host_image);
+    cv::namedWindow("Window", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Window", 800, 800);
+    cv::imshow("Window", image);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+}
+
 img_conv::img_conv(int input_width, int input_height, int output_width, int output_height)
 {
     sizes.input_width = input_width;
@@ -54,7 +90,8 @@ img_conv::img_conv(int input_width, int input_height, int output_width, int outp
                sizeof(float) * sizes.output_width * sizes.output_height * NUM_OF_CHANNELS);
     cudaMalloc(reinterpret_cast<void **>(&reference),
                sizeof(float) * sizes.output_width * sizes.output_height * NUM_OF_CHANNELS);
-    cudaMallocHost(reinterpret_cast<void **>(&cbycr_image), sizes.input_width * sizes.input_height * ImageDefinitions::UYVY_BPP);
+    cudaMallocHost(reinterpret_cast<void **>(&cbycr_image),
+                   sizes.input_width * sizes.input_height * ImageDefinitions::UYVY_BPP);
 
     int_channels_f16[0] = (Npp16f *)int_f16;
     int_channels_f16[1] = (Npp16f *)int_f16 + (sizes.input_width * sizes.input_height);
@@ -119,19 +156,19 @@ img_conv::~img_conv()
     cudaFree(dst_f32);
     cudaFree(dst_f16);
     cudaFree(reference);
-    cudaFree(cbycr_image);
-    cudaFree(imagesSrc);
-    cudaFree(imagesDst);
-    cudaFree(roi);
+    cudaFreeHost(cbycr_image);
+    cudaFreeHost(imagesSrc);
+    cudaFreeHost(imagesDst);
+    cudaFreeHost(roi);
     cudaFree(dImagesSrc);
     cudaFree(dImagesDst);
     cudaFree(dRoi);
 
     cublasDestroy(cublas_handle);
-
 }
 
-void img_conv::zero_data() {
+void img_conv::zero_data()
+{
     cudaMemset(int_f32, 0, sizeof(float) * sizes.input_height * sizes.input_width * NUM_OF_CHANNELS);
     cudaMemset(int_f16, 0, sizeof(__half) * sizes.input_width * sizes.input_height * NUM_OF_CHANNELS);
     cudaMemset(dst_f16, 0, sizeof(__half) * sizes.output_width * sizes.output_height * NUM_OF_CHANNELS);
@@ -179,9 +216,8 @@ cv::Mat img_conv::resize_with_aspect_ratio(const cv::Mat &input)
 
     float input_width = static_cast<float>(input.cols);
     float input_height = static_cast<float>(input.rows);
-    float resize_ratio = std::min(
-        static_cast<float>(sizes.output_width) / input_width,
-        static_cast<float>(sizes.output_height) / input_height);
+    float resize_ratio = std::min(static_cast<float>(sizes.output_width) / input_width,
+                                  static_cast<float>(sizes.output_height) / input_height);
     int unpad_width = std::ceil(resize_ratio * input_width);
     int unpad_height = std::ceil(resize_ratio * input_height);
     int top_padding = std::lround(padding_height - padding_offset);
@@ -195,7 +231,8 @@ cv::Mat img_conv::resize_with_aspect_ratio(const cv::Mat &input)
     Mat padded_image(sizes.output_height, sizes.output_width, CV_8UC3, {0, 0, 0});
 
     resize(input, resized_image, resized_image.size(), 0, 0, INTER_LINEAR);
-    copyMakeBorder(resized_image, padded_image, top_padding, bottom_padding, left_padding, right_padding, cv::BORDER_CONSTANT, {0, 0, 0});
+    copyMakeBorder(resized_image, padded_image, top_padding, bottom_padding, left_padding, right_padding,
+                   cv::BORDER_CONSTANT, {0, 0, 0});
     return padded_image;
 }
 
@@ -210,10 +247,9 @@ cv::Mat img_conv::normalize_cv_mat(const cv::Mat &input, bool aNormalize)
     Mat split_channels(height, width, CV_8UC3);
     Mat normalized;
 
-    std::vector<Mat> channels{
-        Mat(height, width, CV_8U, &(split_channels.ptr()[0])),
-        Mat(height, width, CV_8U, &(split_channels.ptr()[channel_size])),
-        Mat(height, width, CV_8U, &(split_channels.ptr()[2 * channel_size]))};
+    std::vector<Mat> channels{Mat(height, width, CV_8U, &(split_channels.ptr()[0])),
+                              Mat(height, width, CV_8U, &(split_channels.ptr()[channel_size])),
+                              Mat(height, width, CV_8U, &(split_channels.ptr()[2 * channel_size]))};
 
     split(input, channels);
 
@@ -227,18 +263,28 @@ cv::Mat img_conv::normalize_cv_mat(const cv::Mat &input, bool aNormalize)
 
 void img_conv::create_reference_image()
 {
-    uint8_t *rgb = reinterpret_cast<uint8_t *>(ippMalloc(sizes.input_width * sizes.input_height * 3));
-    ippiCbYCr422ToRGB_8u_C2C3R(cbycr_image, sizes.input_width * 2, rgb, sizes.input_height * 3,
+    uint8_t *rgb = reinterpret_cast<uint8_t *>(ippMalloc(sizes.input_width * sizes.input_height * ImageDefinitions::RGB_BPP));
+    ippiCbYCr422ToRGB_8u_C2C3R(cbycr_image, sizes.input_width * ImageDefinitions::UYVY_BPP, rgb, sizes.input_width * ImageDefinitions::RGB_BPP,
                                IppiSize{sizes.input_width, sizes.input_height});
+
     cv::Mat tDeviceImageMat(sizes.input_height, sizes.input_width, CV_8UC3, rgb);
     cv::Mat tResizedInputImage = resize_with_aspect_ratio(tDeviceImageMat);
     final_image = normalize_cv_mat(tResizedInputImage, true);
+
+    if (false)
+        display_image_cpu(rgb, sizes.input_width, sizes.input_height);
+
     ippFree(rgb);
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT601(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT601(uint8_t *__restrict__ src,
+                                                                    float *__restrict__ dst_r,
+                                                                    float *__restrict__ dst_g,
+                                                                    float *__restrict__ dst_b,
+                                                                    const int width,
+                                                                    const int height,
+                                                                    const int src_pitch,
+                                                                    int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -284,9 +330,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT601(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT709(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT709(uint8_t *__restrict__ src,
+                                                                    float *__restrict__ dst_r,
+                                                                    float *__restrict__ dst_g,
+                                                                    float *__restrict__ dst_b,
+                                                                    const int width,
+                                                                    const int height,
+                                                                    const int src_pitch,
+                                                                    int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -332,9 +383,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_NVIDIA_BT709(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT601(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT601(uint8_t *__restrict__ src,
+                                                                   float *__restrict__ dst_r,
+                                                                   float *__restrict__ dst_g,
+                                                                   float *__restrict__ dst_b,
+                                                                   const int width,
+                                                                   const int height,
+                                                                   const int src_pitch,
+                                                                   int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -380,9 +436,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT601(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT709(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT709(uint8_t *__restrict__ src,
+                                                                   float *__restrict__ dst_r,
+                                                                   float *__restrict__ dst_g,
+                                                                   float *__restrict__ dst_b,
+                                                                   const int width,
+                                                                   const int height,
+                                                                   const int src_pitch,
+                                                                   int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -428,9 +489,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_BASIC_IMPL_INTEL_BT709(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT601(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT601(uint8_t *__restrict__ src,
+                                                                  float *__restrict__ dst_r,
+                                                                  float *__restrict__ dst_g,
+                                                                  float *__restrict__ dst_b,
+                                                                  const int width,
+                                                                  const int height,
+                                                                  const int src_pitch,
+                                                                  int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -485,9 +551,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT601(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT709(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT709(uint8_t *__restrict__ src,
+                                                                  float *__restrict__ dst_r,
+                                                                  float *__restrict__ dst_g,
+                                                                  float *__restrict__ dst_b,
+                                                                  const int width,
+                                                                  const int height,
+                                                                  const int src_pitch,
+                                                                  int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -542,9 +613,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_NVIDIA_BT709(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601(uint8_t *__restrict__ src,
+                                                                 float *__restrict__ dst_r,
+                                                                 float *__restrict__ dst_g,
+                                                                 float *__restrict__ dst_b,
+                                                                 const int width,
+                                                                 const int height,
+                                                                 const int src_pitch,
+                                                                 int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -602,9 +678,15 @@ __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16(
-    uint8_t *__restrict__ src, half *__restrict__ dst_r, half *__restrict__ dst_g, half *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, const int dst_f16_pitch, const half_constants constants)
+__global__ void convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16(uint8_t *__restrict__ src,
+                                                                      half *__restrict__ dst_r,
+                                                                      half *__restrict__ dst_g,
+                                                                      half *__restrict__ dst_b,
+                                                                      const int width,
+                                                                      const int height,
+                                                                      const int src_pitch,
+                                                                      const int dst_f16_pitch,
+                                                                      const half_constants constants)
 {
     conversion_union conv;
 
@@ -662,9 +744,15 @@ __global__ void convertCbYCrToBGR24_F16_P3R_FMA_IMPL_INTEL_BT601_FP16(
     *(uint32_t *)&dst_g[dst_f16_idx] = *(uint32_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601_FP16(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, const int dst_f32_pitch, const half_constants constants)
+__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601_FP16(uint8_t *__restrict__ src,
+                                                                      float *__restrict__ dst_r,
+                                                                      float *__restrict__ dst_g,
+                                                                      float *__restrict__ dst_b,
+                                                                      const int width,
+                                                                      const int height,
+                                                                      const int src_pitch,
+                                                                      const int dst_f32_pitch,
+                                                                      const half_constants constants)
 {
     conversion_union conv;
 
@@ -722,9 +810,14 @@ __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT601_FP16(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT709(
-    uint8_t *__restrict__ src, float *__restrict__ dst_r, float *__restrict__ dst_g, float *__restrict__ dst_b,
-    const int width, const int height, const int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT709(uint8_t *__restrict__ src,
+                                                                 float *__restrict__ dst_r,
+                                                                 float *__restrict__ dst_g,
+                                                                 float *__restrict__ dst_b,
+                                                                 const int width,
+                                                                 const int height,
+                                                                 const int src_pitch,
+                                                                 int dst_f32_pitch)
 {
 
     conversion_union conv;
@@ -779,11 +872,15 @@ __global__ void convertCbYCrToBGR24_F32_P3R_FMA_IMPL_INTEL_BT709(
     *(uint64_t *)&dst_g[dst_f32_idx] = *(uint64_t *)&pixel;
 }
 
-__global__ void convertCbYCrToBGR24_F32_P3R_APPROX(uint8_t *__restrict__ src, float *__restrict__ dst_r,
-                                                   float *__restrict__ dst_g, float *__restrict__ dst_b,
-                                                   int width, int height, int src_pitch, int dst_f32_pitch)
+__global__ void convertCbYCrToBGR24_F32_P3R_APPROX(uint8_t *__restrict__ src,
+                                                   float *__restrict__ dst_r,
+                                                   float *__restrict__ dst_g,
+                                                   float *__restrict__ dst_b,
+                                                   int width,
+                                                   int height,
+                                                   int src_pitch,
+                                                   int dst_f32_pitch)
 {
-
     conversion_union conv;
 
     int x = 2 * (blockIdx.x * blockDim.x + threadIdx.x);
@@ -829,6 +926,8 @@ __global__ void convertCbYCrToBGR24_F32_P3R_APPROX(uint8_t *__restrict__ src, fl
 
 void img_conv::convert_CbYCrToBGR(uint8_t conv_type)
 {
+    bool print = false;
+
     dim3 block(TILE_WIDTH, TILE_HEIGHT);
     dim3 grid((sizes.input_width + (2 * TILE_WIDTH - 1)) / (2 * TILE_WIDTH),
               (sizes.input_height + TILE_HEIGHT - 1) / TILE_HEIGHT);
@@ -920,12 +1019,18 @@ void img_conv::convert_CbYCrToBGR(uint8_t conv_type)
                                    sizes.output_width * sizeof(Npp32f), dst_size, context);
         break;
     }
+
+    if (print)
+    {
+        display_image(dst_f32, 1984, 1984);
+        display_image_cpu(final_image.ptr<float>(), 1984, 1984);
+    }
+
+    cudaStreamSynchronize(context.hStream);
 }
 
 std::tuple<float, float, float> img_conv::compute_rel_err()
 {
-    cudaDeviceSynchronize();
-
     int len = sizes.output_height * sizes.output_width * NUM_OF_CHANNELS;
     float reference_nrm = 0;
     float dut_nrm = 0;
@@ -935,8 +1040,6 @@ std::tuple<float, float, float> img_conv::compute_rel_err()
     cublasSnrm2_v2(cublas_handle, len, reference, 1, &reference_nrm);
     cublasSaxpy_v2(cublas_handle, len, &alpha, dst_f32, 1, reference, 1);
     cublasSnrm2_v2(cublas_handle, len, reference, 1, &dut_nrm);
-
-    cudaDeviceSynchronize();
 
     return std::make_tuple(reference_nrm, dut_nrm, dut_nrm / reference_nrm);
 }
@@ -961,7 +1064,8 @@ int img_conv::upload_reference(float *image)
 
 int img_conv::upload_reference()
 {
-    return cudaMemcpy(reference, this->final_image.ptr<void>(), sizeof(float) * sizes.output_height * sizes.output_width * NUM_OF_CHANNELS,
+    return cudaMemcpy(reference, final_image.data,
+                      sizeof(float) * sizes.output_height * sizes.output_width * NUM_OF_CHANNELS,
                       cudaMemcpyHostToDevice);
 }
 
@@ -969,6 +1073,7 @@ void img_conv::set_cbycr_image(std::uint8_t *image)
 {
     memcpy(cbycr_image, image, sizes.input_height * sizes.input_width * ImageDefinitions::UYVY_BPP);
 }
+
 std::uint8_t *img_conv::get_u8_ptr()
 {
     return src_image;
